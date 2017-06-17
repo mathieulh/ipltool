@@ -1,4 +1,4 @@
-CC=gcc
+CC=g++
 CFLAGS=-Wall
 LDFLAGS=
 SOURCES=aes.cpp ec.cpp sha1.cpp ipltool.cpp
