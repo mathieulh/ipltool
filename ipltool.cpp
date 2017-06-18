@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -37,13 +39,13 @@ bool decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned cha
 	unsigned char iv[0x10];
 	memset(iv, 0, 0x10);
 	unsigned int pad = (0x10 - (size % 0x10)) % 0x10;
-	unsigned char *data_in_buf = (unsigned char*) malloc(size+ pad);
-	unsigned char *data_out_buf = (unsigned char*) malloc(size+ pad);
+	unsigned char *data_in_buf = (unsigned char*) malloc(size + pad);
+	unsigned char *data_out_buf = (unsigned char*) malloc(size + pad);
 	unsigned int computed_checksum;
 	bool res = true;
 	
-	memset(data_in_buf, 0, (size+ pad));
-	memset(data_out_buf, 0, (size+ pad));
+	memset(data_in_buf, 0, (size + pad));
+	memset(data_out_buf, 0, (size + pad));
 	fseek(in, offset, SEEK_SET);
 	fread(data_in_buf, (size + pad), 1, in);
 	
@@ -275,6 +277,17 @@ int main(int argc, char *argv[])
 				for (i = 0; i < 0x10; i++)
 					printf("%02X", cmac_hash[i]);
 				printf("\n");
+				
+				//Check header cmac.
+				if (memcmp(cmac_hash, cmac_header->cmac_header_hash, 0x10))
+				{
+					printf("STATUS: FAIL\n");
+					fclose(in);
+					fclose(out);
+					return 0;
+				}
+				else
+					printf("STATUS: OK\n");
 
 				printf("BLOCK CMAC:  ");
 				for (i = 0; i < 0x10; i++)
@@ -293,7 +306,18 @@ int main(int argc, char *argv[])
 				printf("COMPUTED:    ");
 				for (i = 0x0; i < 0x10; i++)
 					printf("%02X", cmac_hash[i]);
-				printf("\n");	
+				printf("\n");
+				
+				//Check block cmac.
+				if (memcmp(cmac_hash, cmac_header->cmac_block_hash, 0x10))
+				{
+					printf("STATUS: FAIL\n");
+					fclose(in);
+					fclose(out);
+					return 0;
+				}
+				else
+					printf("STATUS: OK\n");
 			
 				free(block_buf);
 			}
@@ -346,6 +370,9 @@ int main(int argc, char *argv[])
 				if (!ecdsa_verify(header_hash, signature_r, signature_s))
 				{
 					printf("STATUS: FAIL\n");
+					fclose(in);
+					fclose(out);
+					return 0;
 				}
 				else
 					printf("STATUS: OK\n");
@@ -381,21 +408,25 @@ int main(int argc, char *argv[])
 				if (!ecdsa_verify(block_hash, signature_r, signature_s))
 				{
 					printf("STATUS: FAIL\n");
+					fclose(in);
+					fclose(out);
+					return 0;
 				}
 				else
 					printf("STATUS: OK\n");
-
 			}
 			else
 			{
 					printf("Error! Unknown Kirk mode.\n");
+					fclose(in);
+					fclose(out);
 					return 0;
 			}
 		
 		
 			//Decrypt data
-			printf("Encrypted data size: 0x%X bytes\n", header->data_size);
-			printf("Encrypted metadata size: 0x%X bytes\n", header->data_offset);
+			printf("Encrypted data size:   0x%X\n", header->data_size);
+			printf("Encrypted data offset: 0x%X\n", header->data_offset);
 			real_data_offset = (header_offset + 0x90 + header->data_offset);
 			if (!decrypt_data(in, real_data_offset, header->data_size, header->key_header, data_checksum, out))
 			{
@@ -413,7 +444,7 @@ int main(int argc, char *argv[])
 			free(header_buf);
 			
 		}	
-		
+		printf("Data successfully decrypted!\n");
 		fclose(in);
 		fclose(out);
 	}
