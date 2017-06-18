@@ -1,5 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -15,24 +13,34 @@ void decrypt_header(unsigned char* header_buf, unsigned int buf_size)
 	aescbc128_decrypt(kirk1_key, iv, header_buf, header_buf, buf_size);
 }
 
-unsigned int calculate_checksum(void *dst, const void *src, int size)
+unsigned int calculate_checksum(const void *buf, int size)
 {
 	int i = 0;
 	unsigned int checksum = 0;
 
 	for (i=0; i<size; i+=4)
-		checksum += *(unsigned int*)((unsigned char*)src + i);
+		checksum += *(unsigned int*)((unsigned char*)buf + i);
 
  return(checksum);
 }
 
-void decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned char *key, FILE *out)
+bool verify_checksum(unsigned int expected_checksum, unsigned int computed_checksum)
+{
+	if (computed_checksum == expected_checksum)
+		return true;
+	
+	return false;
+}
+
+bool decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned char *key, unsigned int *data_checksum, FILE *out)
 {
 	unsigned char iv[0x10];
 	memset(iv, 0, 0x10);
 	unsigned int pad = (0x10 - (size % 0x10)) % 0x10;
 	unsigned char *data_in_buf = (unsigned char*) malloc(size+ pad);
 	unsigned char *data_out_buf = (unsigned char*) malloc(size+ pad);
+	unsigned int computed_checksum;
+	bool res = true;
 	
 	memset(data_in_buf, 0, (size+ pad));
 	memset(data_out_buf, 0, (size+ pad));
@@ -48,17 +56,28 @@ void decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned cha
 	{
 		printf("\n");													//type 2+
 		printf("[*] Block Header:\n");
-		printf("Load address:    0x%X\n", blk_header->load_address);
-		printf("Data size:       0x%X\n", blk_header->data_size);
-		//if (blk_header->entry_point != 0)
-		printf("Entry point:     0x%X\n", blk_header->entry_point);
+		printf("LOAD ADDRESS:    0x%X\n", blk_header->load_address);
+		printf("DATA SIZE:       0x%X\n", blk_header->data_size);
+		if (blk_header->entry_point != 0)
+			printf("ENTRY POINT:     0x%X\n", blk_header->entry_point);
 	
-		//if (blk_header->checksum != 0)
-		printf("Prev blk chksum: 0x%X\n", blk_header->checksum);	
-	
-		//printf("[*] Block Checksum : 0x%X \n",  (_memcpy(data_out_buf, (data_in_buf + 0x10), (size - 0x10))));
+		printf("PREW BLK CHKSUM: 0x%X\n", blk_header->checksum);	
+		printf("COMPUTED:        0x%X\n", data_checksum[0]);
+
+		if (!verify_checksum(data_checksum[0], blk_header->checksum))
+		{
+			printf("STATUS: FAIL\n");
+			res = false;
+		}
+		else
+			printf("STATUS: OK\n");
+
 		memcpy(data_out_buf, (data_in_buf + 0x10), size);
 		size = blk_header->data_size;
+		
+		//calculate and store current block checksum.
+		computed_checksum = calculate_checksum((data_in_buf + 0x10), blk_header->data_size);
+		data_checksum[0] = computed_checksum;
 	}
 	else
 		memcpy(data_out_buf, data_in_buf, size);  //type 1
@@ -66,6 +85,7 @@ void decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned cha
 	fwrite(data_out_buf, size, 1, out);
 	free(data_in_buf);
 	free(data_out_buf);
+	return res;
 }
 
 void print_usage(char *argv[])
@@ -206,6 +226,8 @@ int main(int argc, char *argv[])
 		unsigned int pad_size = 0;
 		unsigned int real_data_offset = 0;
 		bool IsLastBlock = false;
+		unsigned int *data_checksum = (unsigned int*) malloc(sizeof(data_checksum));
+		data_checksum[0] = 0;
 		
 		while (IsLastBlock == false)
 		{
@@ -261,7 +283,7 @@ int main(int argc, char *argv[])
 
 				memset(cmac_hash, 0, 0x10);
 		
-				unsigned int block_buf_size = 0x30 + header->metadatadata_size + header->data_size + pad_size;
+				unsigned int block_buf_size = 0x30 + header->data_offset + header->data_size + pad_size;
 				unsigned char *block_buf = new unsigned char[block_buf_size];
 				memset(block_buf, 0, block_buf_size);
 				fseek(in, header_offset + 0x60, SEEK_SET);
@@ -342,7 +364,7 @@ int main(int argc, char *argv[])
 				unsigned char block_hash[0x14];
 				memset(block_hash, 0, 0x14);
 			
-				unsigned int block_buf_size = 0x30 + header->metadatadata_size + header->data_size + pad_size;
+				unsigned int block_buf_size = 0x30 + header->data_offset + header->data_size + pad_size;
 				unsigned char *block_buf = new unsigned char[block_buf_size];
 				memset(block_buf, 0, block_buf_size);
 				fseek(in, header_offset + 0x60, SEEK_SET);
@@ -373,9 +395,17 @@ int main(int argc, char *argv[])
 		
 			//Decrypt data
 			printf("Encrypted data size: 0x%X bytes\n", header->data_size);
-			printf("Encrypted metadata size: 0x%X bytes\n", header->metadatadata_size);
-			real_data_offset = (header_offset + 0x90 + header->metadatadata_size);
-			decrypt_data(in, real_data_offset, header->data_size, header->key_header, out);
+			printf("Encrypted metadata size: 0x%X bytes\n", header->data_offset);
+			real_data_offset = (header_offset + 0x90 + header->data_offset);
+			if (!decrypt_data(in, real_data_offset, header->data_size, header->key_header, data_checksum, out))
+			{
+				printf("Error! decrypt_data() failed.\n");
+				fclose(in);
+				fclose(out);
+				return 0;
+			}
+			else
+				printf("Block decrypted.\n");
 			
 			header_offset = header_offset + 0x1000;
 			if ((header_offset >= in_size) || header_offset < header->data_size )
