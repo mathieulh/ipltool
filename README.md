@@ -7,7 +7,9 @@ IPL Tool v. 0.2.0 by draanPSP, Proxima, 173210, Sorvigolova, zecoxao, Mathieulh 
 ===========================================================================================
 
 
-USAGE: ./ipltool -d <file_in> <file_out>
+USAGE: 
+
+       ./ipltool -d <file_in> <file_out>
 
        ./ipltool -e <file_in> <file_out> [options]
 
