@@ -8,12 +8,23 @@ IPL Tool v. 0.2.0 by draanPSP, Proxima, 173210, Sorvigolova, zecoxao, Mathieulh 
 
 
 USAGE: ./ipltool -d <file_in> <file_out>
-       ./ipltool -e <file_in> <file_out> <entry point> [options]
+
+       ./ipltool -e <file_in> <file_out> [options]
 
 Options:
+
        -nv                              Disables verbose logging
+       
        -r                               Use 'retail flag'
+       
        -block-size=<size>               Specify block size
+       
+       -load-address=<address>          Specify base load address
+       
+       -entrypoint=<entrypoint>         Specify entrypoint
+       
+       -ec                              Toggle ECDSA on last block
+
 
 ### Benchmarks
 
