@@ -3,8 +3,8 @@ All In One Purpose tool for decrypting, encrypting, signing and validating ipls
 
 ## Usage
 
-IPL Tool v. 0.1.0 by Felix, Sorvigolova, zecoxao, Mathieulh & LemonHaze
-=======================================================================
+IPL Tool v. 0.2.0 by draanPSP, Proxima, 173210, Sorvigolova, zecoxao, Mathieulh & LemonHaze
+===========================================================================================
 
 
 USAGE: ./ipltool -d <file_in> <file_out>
