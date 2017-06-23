@@ -14,7 +14,7 @@ typedef unsigned char u8;
 
 void prng(unsigned char *dest, int size)
 {
-    unsigned char *buffer = new unsigned char[size];
+    unsigned char *buffer =  (unsigned char *) malloc(size);
 	srand((u32)time(0));
 
 	int i;
@@ -23,7 +23,7 @@ void prng(unsigned char *dest, int size)
 
 	memcpy(dest, buffer, size);
 
-	delete[] buffer;
+	free(buffer);
 }
 
 void bn_print(char *name, u8 *a, u32 n)
@@ -42,12 +42,14 @@ static void bn_zero(u8 *d, u32 n)
 {
 	memset(d, 0, n);
 }
-void bn_copy(u8 *d, u8 *a, u32 n)
+
+
+void bn_copy1(u8 *d, u8 *a, u32 n)
 {
 	memcpy(d, a, n);
 }
 
-int bn_compare(u8 *a, u8 *b, u32 n)
+int bn_compare1(u8 *a, u8 *b, u32 n)
 {
 	u32 i;
 
@@ -93,21 +95,21 @@ static u8 bn_sub_1(u8 *d, u8 *a, u8 *b, u32 n)
 	return 1 - c;
 }
 
-void bn_reduce(u8 *d, u8 *N, u32 n)
+void bn_reduce1(u8 *d, u8 *N, u32 n)
 {
-	if (bn_compare(d, N, n) >= 0)
+	if (bn_compare1(d, N, n) >= 0)
 		bn_sub_1(d, d, N, n);
 }
 
-void bn_add(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
+void bn_add1(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
 {
 	if (bn_add_1(d, a, b, n))
 		bn_sub_1(d, d, N, n);
 
-	bn_reduce(d, N, n);
+	bn_reduce1(d, N, n);
 }
 
-void bn_sub(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
+void bn_sub1(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
 {
 	if (bn_sub_1(d, a, b, n))
 		bn_add_1(d, d, N, n);
@@ -154,10 +156,10 @@ static void bn_mon_muladd_dig(u8 *d, u8 *a, u8 b, u8 *N, u32 n)
 	if (dig)
 		bn_sub_1(d, d, N, n);
 
-	bn_reduce(d, N, n);
+	bn_reduce1(d, N, n);
 }
 
-void bn_mon_mul(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
+void bn_mon_mul1(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
 {
 	u8 t[512];
 	u32 i;
@@ -167,24 +169,24 @@ void bn_mon_mul(u8 *d, u8 *a, u8 *b, u8 *N, u32 n)
 	for (i = n - 1; i < n; i--)
 		bn_mon_muladd_dig(t, a, b[i], N, n);
 
-	bn_copy(d, t, n);
+	bn_copy1(d, t, n);
 }
 
-void bn_to_mon(u8 *d, u8 *N, u32 n)
+void bn_to_mon1(u8 *d, u8 *N, u32 n)
 {
 	u32 i;
 
 	for (i = 0; i < 8*n; i++)
-		bn_add(d, d, d, N, n);
+		bn_add1(d, d, d, N, n);
 }
 
-void bn_from_mon(u8 *d, u8 *N, u32 n)
+void bn_from_mon1(u8 *d, u8 *N, u32 n)
 {
 	u8 t[512];
 
 	bn_zero(t, n);
 	t[n-1] = 1;
-	bn_mon_mul(d, d, t, N, n);
+	bn_mon_mul1(d, d, t, N, n);
 }
 
 static void bn_mon_exp(u8 *d, u8 *a, u8 *N, u32 n, u8 *e, u32 en)
@@ -195,19 +197,19 @@ static void bn_mon_exp(u8 *d, u8 *a, u8 *N, u32 n, u8 *e, u32 en)
 
 	bn_zero(d, n);
 	d[n-1] = 1;
-	bn_to_mon(d, N, n);
+	bn_to_mon1(d, N, n);
 
 	for (i = 0; i < en; i++)
 		for (mask = 0x80; mask != 0; mask >>= 1) {
-			bn_mon_mul(t, d, d, N, n);
+			bn_mon_mul1(t, d, d, N, n);
 			if ((e[i] & mask) != 0)
-				bn_mon_mul(d, t, a, N, n);
+				bn_mon_mul1(d, t, a, N, n);
 			else
-				bn_copy(d, t, n);
+				bn_copy1(d, t, n);
 		}
 }
 
-void bn_mon_inv(u8 *d, u8 *a, u8 *N, u32 n)
+void bn_mon_inv1(u8 *d, u8 *a, u8 *N, u32 n)
 {
 	u8 t[512], s[512];
 
@@ -217,15 +219,15 @@ void bn_mon_inv(u8 *d, u8 *a, u8 *N, u32 n)
 	bn_mon_exp(d, a, N, n, t, n);
 }
 
-void bn_copy(u8 *d, u8 *a, u32 n);
+void bn_copy1(u8 *d, u8 *a, u32 n);
 int bn_compare(u8 *a, u8 *b, u32 n);
-void bn_reduce(u8 *d, u8 *N, u32 n);
-void bn_add(u8 *d, u8 *a, u8 *b, u8 *N, u32 n);
-void bn_sub(u8 *d, u8 *a, u8 *b, u8 *N, u32 n);
-void bn_to_mon(u8 *d, u8 *N, u32 n);
-void bn_from_mon(u8 *d, u8 *N, u32 n);
-void bn_mon_mul(u8 *d, u8 *a, u8 *b, u8 *N, u32 n);
-void bn_mon_inv(u8 *d, u8 *a, u8 *N, u32 n);
+void bn_reduce1(u8 *d, u8 *N, u32 n);
+void bn_add1(u8 *d, u8 *a, u8 *b, u8 *N, u32 n);
+void bn_sub1(u8 *d, u8 *a, u8 *b, u8 *N, u32 n);
+void bn_to_mon1(u8 *d, u8 *N, u32 n);
+void bn_from_mon1(u8 *d, u8 *N, u32 n);
+void bn_mon_mul1(u8 *d, u8 *a, u8 *b, u8 *N, u32 n);
+void bn_mon_inv1(u8 *d, u8 *a, u8 *N, u32 n);
 
 struct point {
 	u8 x[20];
@@ -263,17 +265,17 @@ static int elt_is_zero(u8 *d)
 
 static void elt_add(u8 *d, u8 *a, u8 *b)
 {
-	bn_add(d, a, b, ec_p, 20);
+	bn_add1(d, a, b, ec_p, 20);
 }
 
 static void elt_sub(u8 *d, u8 *a, u8 *b)
 {
-	bn_sub(d, a, b, ec_p, 20);
+	bn_sub1(d, a, b, ec_p, 20);
 }
 
 static void elt_mul(u8 *d, u8 *a, u8 *b)
 {
-	bn_mon_mul(d, a, b, ec_p, 20);
+	bn_mon_mul1(d, a, b, ec_p, 20);
 }
 
 static void elt_square(u8 *d, u8 *a)
@@ -285,19 +287,19 @@ static void elt_inv(u8 *d, u8 *a)
 {
 	u8 s[20];
 	elt_copy(s, a);
-	bn_mon_inv(d, s, ec_p, 20);
+	bn_mon_inv1(d, s, ec_p, 20);
 }
 
 static void point_to_mon(struct point *p)
 {
-	bn_to_mon(p->x, ec_p, 20);
-	bn_to_mon(p->y, ec_p, 20);
+	bn_to_mon1(p->x, ec_p, 20);
+	bn_to_mon1(p->y, ec_p, 20);
 }
 
 static void point_from_mon(struct point *p)
 {
-	bn_from_mon(p->x, ec_p, 20);
-	bn_from_mon(p->y, ec_p, 20);
+	bn_from_mon1(p->x, ec_p, 20);
+	bn_from_mon1(p->y, ec_p, 20);
 }
 
 #if 0
@@ -448,7 +450,7 @@ static void generate_ecdsa(u8 *R, u8 *S, u8 *k, u8 *hash)
 
 	e[0] = 0;
 	memcpy(e + 1, hash, 20);
-	bn_reduce(e, ec_N, 21);
+	bn_reduce1(e, ec_N, 21);
 
 try_again:
 	prng(m, 21);
@@ -465,20 +467,20 @@ try_again:
 
 	//	S = m**-1*(e + Rk) (mod N)
 
-	bn_copy(kk, k, 21);
-	bn_reduce(kk, ec_N, 21);
-	bn_to_mon(m, ec_N, 21);
-	bn_to_mon(e, ec_N, 21);
-	bn_to_mon(R, ec_N, 21);
-	bn_to_mon(kk, ec_N, 21);
+	bn_copy1(kk, k, 21);
+	bn_reduce1(kk, ec_N, 21);
+	bn_to_mon1(m, ec_N, 21);
+	bn_to_mon1(e, ec_N, 21);
+	bn_to_mon1(R, ec_N, 21);
+	bn_to_mon1(kk, ec_N, 21);
 
-	bn_mon_mul(S, R, kk, ec_N, 21);
-	bn_add(kk, S, e, ec_N, 21);
-	bn_mon_inv(minv, m, ec_N, 21);
-	bn_mon_mul(S, minv, kk, ec_N, 21);
+	bn_mon_mul1(S, R, kk, ec_N, 21);
+	bn_add1(kk, S, e, ec_N, 21);
+	bn_mon_inv1(minv, m, ec_N, 21);
+	bn_mon_mul1(S, minv, kk, ec_N, 21);
 
-	bn_from_mon(R, ec_N, 21);
-	bn_from_mon(S, ec_N, 21);
+	bn_from_mon1(R, ec_N, 21);
+	bn_from_mon1(S, ec_N, 21);
 }
 
 static int check_ecdsa(struct point *Q, u8 *R, u8 *S, u8 *hash)
@@ -491,19 +493,19 @@ static int check_ecdsa(struct point *Q, u8 *R, u8 *S, u8 *hash)
 
 	e[0] = 0;
 	memcpy(e + 1, hash, 20);
-	bn_reduce(e, ec_N, 21);
+	bn_reduce1(e, ec_N, 21);
 
-	bn_to_mon(R, ec_N, 21);
-	bn_to_mon(S, ec_N, 21);
-	bn_to_mon(e, ec_N, 21);
+	bn_to_mon1(R, ec_N, 21);
+	bn_to_mon1(S, ec_N, 21);
+	bn_to_mon1(e, ec_N, 21);
 
-	bn_mon_inv(Sinv, S, ec_N, 21);
+	bn_mon_inv1(Sinv, S, ec_N, 21);
 
-	bn_mon_mul(w1, e, Sinv, ec_N, 21);
-	bn_mon_mul(w2, R, Sinv, ec_N, 21);
+	bn_mon_mul1(w1, e, Sinv, ec_N, 21);
+	bn_mon_mul1(w2, R, Sinv, ec_N, 21);
 
-	bn_from_mon(w1, ec_N, 21);
-	bn_from_mon(w2, ec_N, 21);
+	bn_from_mon1(w1, ec_N, 21);
+	bn_from_mon1(w2, ec_N, 21);
 
 	point_mul(&r1, w1, &ec_G);
 	point_mul(&r2, w2, Q);
@@ -514,10 +516,10 @@ static int check_ecdsa(struct point *Q, u8 *R, u8 *S, u8 *hash)
 
 	rr[0] = 0;
 	memcpy(rr + 1, r1.x, 20);
-	bn_reduce(rr, ec_N, 21);
+	bn_reduce1(rr, ec_N, 21);
 
-	bn_from_mon(R, ec_N, 21);
-	bn_from_mon(S, ec_N, 21);
+	bn_from_mon1(R, ec_N, 21);
+	bn_from_mon1(S, ec_N, 21);
 
 	return (bn_compare(rr, R, 21) == 0);
 }
@@ -529,7 +531,7 @@ static void ec_priv_to_pub(u8 *k, u8 *Q)
 }
 #endif
 
-int ecdsa_set_curve(u8* p, u8* a, u8* b, u8* N, u8* Gx, u8* Gy)
+int ecdsa_set_curve1(u8* p, u8* a, u8* b, u8* N, u8* Gx, u8* Gy)
 {
 	memcpy(ec_p, p, 20);
 	memcpy(ec_a, a, 20);
@@ -538,32 +540,32 @@ int ecdsa_set_curve(u8* p, u8* a, u8* b, u8* N, u8* Gx, u8* Gy)
 	memcpy(ec_G.x, Gx, 20);
 	memcpy(ec_G.y, Gy, 20);
 	
-	bn_to_mon(ec_a, ec_p, 20);
-	bn_to_mon(ec_b, ec_p, 20);
+	bn_to_mon1(ec_a, ec_p, 20);
+	bn_to_mon1(ec_b, ec_p, 20);
 
 	point_to_mon(&ec_G);
 
 	return 0;
 } 
 
-void ecdsa_set_pub(u8 *Q)
+void ecdsa_set_pub1(u8 *Q)
 {
 	memcpy(ec_Q.x, Q, 20);
 	memcpy(ec_Q.y, Q+20, 20);
 	point_to_mon(&ec_Q);
 }
 
-void ecdsa_set_priv(u8 *k)
+void ecdsa_set_priv1(u8 *k)
 {
 	memcpy(ec_k, k, sizeof ec_k);
 }
 
-int ecdsa_verify(u8 *hash, u8 *R, u8 *S)
+int ecdsa_verify1(u8 *hash, u8 *R, u8 *S)
 {
 	return check_ecdsa(&ec_Q, R, S, hash);
 }
 
-void ecdsa_sign(u8 *hash, u8 *R, u8 *S)
+void ecdsa_sign1(u8 *hash, u8 *R, u8 *S)
 {
 	generate_ecdsa(R, S, ec_k, hash);
 }

@@ -1,11 +1,7 @@
 #ifndef IPL_H
 #define IPL_H
 
-
-extern "C"
-{
-
-#include "kirk/kirk_engine.h"
+#include "kirk_engine.h"
 
 //0xF60
 #define MAX_IPLBLK_DATA_SIZE (0xF60)
@@ -46,8 +42,6 @@ static inline u32 iplMemcpy(void *dst, const void *src, size_t size)
 	}
 
 	return hash;
-}
-
 }
 
 #endif

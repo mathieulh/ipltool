@@ -1,20 +1,15 @@
-#define _CRT_SECURE_NO_WARNINGS
-
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
+
 #include "ipltool.h"
 #include "aes.h"
 #include "sha1.h"
 #include "ec.h"
-#include "kirk/kirk_engine.h"
+#include "kirk_engine.h"
 #include "ipl.h"
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 int EncryptiplBlk(iplEncBlk *dst, const void *src)
 {
@@ -33,9 +28,6 @@ struct {
     u8 data[sizeof(iplBlk)];
 } buf;
 iplEncBlk encblk; // temp buffer for one 4KB encrypted IPL block
-#ifdef __cplusplus
-}
-#endif
 
 void decrypt_header(unsigned char* header_buf, unsigned int buf_size)
 {
@@ -148,7 +140,7 @@ int main(int argc, char *argv[])
 		u32 hash = 0;
 		iplBlk *bufBlock;
 		bool verbose = true, retail = false;
-		char *tmpSize = new char[512];
+		char *tmpSize = (char*) malloc(512);
 		u32 blkSize = 0xF50;
 		
 		// process extra args
@@ -273,7 +265,7 @@ int main(int argc, char *argv[])
 
 		printf("\nIPL encrypted successfully. \n");	
 
-		delete[] tmpSize;
+		free(tmpSize);
 	}
 	else if ((strcmp(argv[1], "-d") == 0) && (argc == 4))
 	{
@@ -389,7 +381,7 @@ int main(int argc, char *argv[])
 				memset(cmac_hash, 0, 0x10);
 		
 				unsigned int block_buf_size = 0x30 + header->data_offset + header->data_size + pad_size;
-				unsigned char *block_buf = new unsigned char[block_buf_size];
+				unsigned char *block_buf = (unsigned char*) malloc(block_buf_size);
 				memset(block_buf, 0, block_buf_size);
 				fseek(in, header_offset + 0x60, SEEK_SET);
 				fread(block_buf, block_buf_size , 1, in);
@@ -485,7 +477,7 @@ int main(int argc, char *argv[])
 				memset(block_hash, 0, 0x14);
 			
 				unsigned int block_buf_size = 0x30 + header->data_offset + header->data_size + pad_size;
-				unsigned char *block_buf = new unsigned char[block_buf_size];
+				unsigned char *block_buf = (unsigned char*) malloc(block_buf_size);
 				memset(block_buf, 0, block_buf_size);
 				fseek(in, header_offset + 0x60, SEEK_SET);
 				fread(block_buf, block_buf_size , 1, in);

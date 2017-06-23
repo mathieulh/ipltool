@@ -1,12 +1,10 @@
-CPP=g++
-CPPFLAGS= -Wall -g -O0 -I./kirk
-LDFLAGS= -L./kirk -lrt -lkirk
-SOURCES=aes.cpp ec.cpp sha1.cpp ipltool.cpp
+CPP=gcc
+CPPFLAGS= -Wall -g -O0
+LDFLAGS=
+SOURCES=amctrl.c aes.c bn.c crypto.c ec.c ec_ipltool.c kirk_engine.c ipltool.c sha1.c utils.c
 EXECUTABLE=ipltool
 
 all:
-	cd kirk && $(MAKE) && cd ..	
 	$(CPP) $(CPPFLAGS) $(SOURCES) $(LDFLAGS) -o $(EXECUTABLE)
 clean:
-	cd kirk && $(MAKE) clean && cd ..
 	rm -rf $(EXECUTABLE)
