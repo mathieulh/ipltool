@@ -1,5 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -7,6 +8,34 @@
 #include "aes.h"
 #include "sha1.h"
 #include "ec.h"
+#include "kirk/kirk_engine.h"
+#include "ipl.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+int EncryptiplBlk(iplEncBlk *dst, const void *src)
+{
+    int ret = kirk_CMD0(dst, (void*)src, 0xFD0);
+    if(ret == KIRK_NOT_ENABLED){ printf("KIRK not enabled!\n"); return -1;}
+    else if(ret == KIRK_INVALID_MODE){ printf("Mode in header not CMD1\n"); return -1;}
+    else if(ret == KIRK_HEADER_HASH_INVALID){ printf("header hash check failed\n"); return -1;}
+    else if(ret == KIRK_DATA_HASH_INVALID){ printf("data hash check failed\n"); return -1;}
+    else if(ret == KIRK_DATA_SIZE_ZERO){ printf("data size = 0\n"); return -1;}
+    return 0;
+}
+
+u8 ipl[MAX_IPLBLK_DATA_SIZE * MAX_NUM_IPLBLKS]; // buffer for IPL
+struct {
+    KIRK_CMD1_HEADER_ENC hdr;
+    u8 data[sizeof(iplBlk)];
+} buf;
+iplEncBlk encblk; // temp buffer for one 4KB encrypted IPL block
+#ifdef __cplusplus
+}
+#endif
 
 void decrypt_header(unsigned char* header_buf, unsigned int buf_size)
 {
@@ -93,97 +122,160 @@ bool decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned cha
 void print_usage(char *argv[])
 {
 	printf("USAGE: %s -d <file_in> <file_out> \n", argv[0]);
-	printf("       %s -e <file_in> <file_out> <type> [entry_point]\n\n", argv[0]);
-	printf("type should be 1, 2 or 3\n");
-	printf("type 1: one huge block\n");
-	printf("type 2: small blocks, last one is regular block\n");
-	printf("type 3: small blocks, last one is ECDSA signed block with entry point\n");
+	printf("       %s -e <file_in> <file_out> <entry point> [options]\n\n", argv[0]);
+	printf("Options:\n       -nv\t\t\t\tDisables verbose logging\n       -r\t\t\t\tUse 'retail flag'\n       -block-size=<size>\t\tSpecify block size\n\n");
 }
 
 
 int main(int argc, char *argv[])
 {
-	FILE *in = NULL;
-	FILE *out = NULL;
-	unsigned int in_size;
-	
-	printf("IPL Tool v. 0.0.1 alpha\n\n");
-	
-	if ((argc != 4) && (argc != 5) && (argc != 6))
+	printf("IPL Tool v. 0.1.0 by Felix, Sorvigolova, zecoxao, Mathieulh & LemonHaze\n=======================================================================\n\n\n");
+	if (argc <= 3)
 	{
 		print_usage(argv);
 		return 0;
 	}
 	
-	if ((strcmp(argv[1], "-e") == 0)&&(argc >= 5))
+	FILE *in = NULL;
+	FILE *out = NULL;
+	unsigned int in_size;
+	int blocks = 0;
+	
+	if ((strcmp(argv[1], "-e") == 0))
 	{
-		printf("Encryption mode\n");
-		in = fopen(argv[2], "rb");
-		//Check input file for permission.
-		if (in == NULL)
-		{
-			printf("Error! Could not open file %s.\n", argv[2]);
-			return 0;
-		}
-		else
-			printf("File %s loaded.\n", argv[2]);
+		unsigned long int entry;
+		int cur;
+		u32 hash = 0;
+		iplBlk *bufBlock;
+		bool verbose = true, retail = false;
+		char *tmpSize = new char[512];
+		u32 blkSize = 0xF50;
 		
-		//Obtain size of the input file.
-		fseek(in, 0, SEEK_END);
-		in_size = ftell(in);
-		fseek(in, 0, SEEK_SET);
+		// process extra args
+		for(int i = 5; i < argc; i++)
+		{
+			if ((strcmp(argv[i], "-nv") == 0))
+				verbose = !verbose;
+			else if ((strcmp(argv[i], "-r") == 0))
+				retail = !retail;
+			else if (sscanf(argv[i], "-block-size=%s", tmpSize))
+				blkSize = strtoul(tmpSize, NULL, 0);	
+		}
 		
-		//Check input file for size.
-		if (in_size < 0x4 || in_size > 0x40000000)
-		{
-			printf("Error! Invalid IPL file detected, exiting.\n");
-			fclose(in);
-			return 0;
-		}
-		printf("File size : 0x%X bytes\n", in_size);
-		
-		//Create output file.
-		out = fopen(argv[3], "wb");
-	
-		//Check output file for permission.
-		if (out == NULL)
-		{
-			printf("Error! Could not create file %s.\n", argv[3]);
-			fclose(in);
-			return 0;
-		}
-		fclose(out);
-	
-		//Open output file.
-		out = fopen(argv[3], "ab");
-		
-		//Branching Types
-		if (strcmp(argv[4], "1") == 0)
-		{
-			printf("Selected type: 1 (one huge block)\n");
-			printf("Not implemented yet...\n");
-		}
-		else if (strcmp(argv[4], "2") == 0)
-		{
-			printf("Selected type: 2 (small blocks, last one is regular block)\n");
-			printf("not implemented yet\n");
-		}
-		else if (strcmp(argv[4], "3") == 0)
-		{
-			printf("Selected type: 3 (small blocks, last one is ECDSA signed block with entry point)\n");
-			printf("Not implemented yet...\n");
-		}
-		else
-		{
-			printf("Error! Incorrect type selected, exiting\n");
-			fclose(in);
-			fclose(out);
+		entry = strtoul(argv[4], NULL, 0);
+		if (entry >= 0xB0000000) {
+			printf("illegal entry\n");
+			return -2;
 		}
 
+		//Open the file to decrypt, get it's size
+		in = fopen(argv[2], "rb");
+		fseek(in, 0, SEEK_END);
+		int size_dec = ftell(in);
+		rewind(in);
+		
+		fread(ipl, size_dec, 1, in);
 		fclose(in);
-		fclose(out);
+		
+		//init KIRK crypto engine
+		kirk_init(); 
+
+		out = fopen(argv[3], "wb");
+
+		buf.hdr.mode = KIRK_MODE_CMD1;
+		buf.hdr.ecdsa = 0;
+		buf.hdr.data_offset = 0x10;
+		
+		// Add devflag
+		if(!retail)
+		{
+			buf.hdr.unk3[4] = 0xFF;
+			buf.hdr.unk3[5] = 0xFF;
+			buf.hdr.unk3[6] = 0xFF;
+			buf.hdr.unk3[7] = 0xFF;
+		}
+
+		bufBlock = (iplBlk *)(buf.data + 0x10);
+		
+		bufBlock->addr = entry;
+		
+		bufBlock->size = blkSize;
+		bufBlock->entry = 0;
+		bufBlock->hash = 0;
+		hash = iplMemcpy(bufBlock->data, ipl, bufBlock->size);
+
+		buf.hdr.data_size = offsetof(iplBlk, data) + bufBlock->size;
+		
+		blocks++;
+		if(verbose) printf("================================================================\n| Block %d \t | Load Address: 0x%08X | Size: 0x%08X |\n================================================================\n", blocks, bufBlock->addr, bufBlock->size);
+
+		if (EncryptiplBlk(&encblk, &buf) != 0)
+		{
+			printf("IPL block encryption failed!\n");
+			fclose(out);
+			return -1;
+		}
+
+		fwrite(&encblk, sizeof(encblk), 1, out);
+
+		buf.hdr.data_offset = 0x10;
+		
+		bufBlock = (iplBlk *)(buf.data + 0x10);
+		bufBlock->size = blkSize;
+		bufBlock->entry = 0;
+
+		buf.hdr.data_size = offsetof(iplBlk, data) + bufBlock->size;
+
+		//encrypt all decrypted IPL blocks
+		for (cur = bufBlock->size; cur + bufBlock->size < size_dec; cur += bufBlock->size)
+		{
+			blocks++;
+			
+			bufBlock->addr = entry + cur;
+			bufBlock->hash = hash;
+			// load a single decrypted IPL block
+			hash = iplMemcpy(bufBlock->data, ipl + cur, bufBlock->size);
+
+			// encrypt the ipl block
+			if (EncryptiplBlk(&encblk, &buf) != 0)
+			{
+				printf("IPL block encryption failed!\n");
+				fclose(out);
+				return -1;
+			}
+			
+			if(verbose) printf("| Block %d \t | Load Address: 0x%08X | Size: 0x%08X |\n================================================================\n", blocks, bufBlock->addr, bufBlock->size);
+			
+			fwrite(&encblk, sizeof(encblk), 1, out);
+		}
+
+		buf.hdr.ecdsa = 0;      // turned off at the moment, for testing		
+		bufBlock->addr = entry + cur;
+		bufBlock->size = size_dec - cur;
+		bufBlock->entry = entry; //was 0x40F0000
+		bufBlock->hash = hash;
+		memcpy(bufBlock->data, ipl + cur, bufBlock->size);
+
+		buf.hdr.data_size = offsetof(iplBlk, data) + bufBlock->size;
+
+		if (EncryptiplBlk(&encblk, &buf) != 0)
+		{
+			printf("IPL block encryption failed!\n");
+			fclose(out);
+			return -1;
+		}
+		
+		blocks++;
+		if(verbose) printf("| Block %d \t | Load Address: 0x%08X | Size: 0x%08X |\n================================================================\n", blocks, bufBlock->addr, bufBlock->size);
+
+		fwrite(&encblk, sizeof(encblk), 1, out);
+		fclose(out);	
+
+		printf("\nIPL encrypted successfully. \n");	
+
+		delete[] tmpSize;
 	}
-	else if ((strcmp(argv[1], "-d") == 0)&&(argc == 4))
+	else if ((strcmp(argv[1], "-d") == 0) && (argc == 4))
 	{
 		printf("Decryption mode\n");
 		in = fopen(argv[2], "rb");
@@ -320,6 +412,7 @@ int main(int argc, char *argv[])
 					printf("STATUS: OK\n");
 			
 				free(block_buf);
+				blocks++;
 			}
 			else if (header->mode == ECDSA_MODE)
 			{
@@ -444,13 +537,13 @@ int main(int argc, char *argv[])
 			free(header_buf);
 			
 		}	
-		printf("Data successfully decrypted!\n");
+		printf("Data successfully decrypted!\nDecrypted %d blocks.\n", blocks);
 		fclose(in);
 		fclose(out);
 	}
 	else
 		printf("Unknown mode, exiting\n");
 	
-	return 4; // Chosen by a fair dice roll
-}             // Guaranteed to be a random
+	return 4; 
+}             
 
