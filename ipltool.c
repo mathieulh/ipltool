@@ -1,15 +1,31 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
-
 #include "ipltool.h"
 #include "aes.h"
 #include "sha1.h"
 #include "ec.h"
 #include "kirk_engine.h"
 #include "ipl.h"
+
+#define APP_VER "0.2"
+#define DATA_BUF 512
+#define DECRYPTED_BLOCK_SIZE ((decBlkSize-blkSize))
+
+// Default values
+unsigned long int entry			= 0x040F0000;
+u32 loadAddr 					= 0x040F0000;
+u32 blkSize 					= 0xF50;
+u32 decBlkSize 					= 0xF60;
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 int EncryptiplBlk(iplEncBlk *dst, const void *src)
 {
@@ -28,6 +44,9 @@ struct {
     u8 data[sizeof(iplBlk)];
 } buf;
 iplEncBlk encblk; // temp buffer for one 4KB encrypted IPL block
+#ifdef __cplusplus
+}
+#endif
 
 void decrypt_header(unsigned char* header_buf, unsigned int buf_size)
 {
@@ -114,14 +133,14 @@ bool decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned cha
 void print_usage(char *argv[])
 {
 	printf("USAGE: %s -d <file_in> <file_out> \n", argv[0]);
-	printf("       %s -e <file_in> <file_out> <entry point> [options]\n\n", argv[0]);
-	printf("Options:\n       -nv\t\t\t\tDisables verbose logging\n       -r\t\t\t\tUse 'retail flag'\n       -block-size=<size>\t\tSpecify block size\n\n");
+	printf("       %s -e <file_in> <file_out> [options]\n\n", argv[0]);
+	printf("Options:\n       -nv\t\t\t\tDisables verbose logging\n       -r\t\t\t\tUse 'retail flag'\n       -block-size=<size>\t\tSpecify block size\n       -load-address=<address>\t\tSpecify base load address\n       -entrypoint=<entrypoint>\t\tSpecify entrypoint\n       -ec\t\t\t\tToggle ECDSA on last block\n\n");
 }
-
 
 int main(int argc, char *argv[])
 {
-	printf("IPL Tool v. 0.1.0 by Felix, Sorvigolova, zecoxao, Mathieulh & LemonHaze\n=======================================================================\n\n\n");
+	printf("*=================*\n| IPL Tool v." APP_VER "  |\n*=================*\nCredits: draanPSP, Proxima, 173210, Sorvigolova, zecoxao, Mathieulh & LemonHaze\n\n");
+	        
 	if (argc <= 3)
 	{
 		print_usage(argv);
@@ -135,31 +154,41 @@ int main(int argc, char *argv[])
 	
 	if ((strcmp(argv[1], "-e") == 0))
 	{
-		unsigned long int entry;
 		int cur;
 		u32 hash = 0;
 		iplBlk *bufBlock;
-		bool verbose = true, retail = false;
-		char *tmpSize = (char*) malloc(512);
-		u32 blkSize = 0xF50;
+		bool verbose = true, retail = false, ecdsa = false;
+		char *tmpSize = (char*) malloc(DATA_BUF); 
+		char *tmpEntrypoint = (char*) malloc(DATA_BUF); 
+		char *tmpLoadAddress = (char*) malloc(DATA_BUF); 
 		
 		// process extra args
-		for(int i = 5; i < argc; i++)
+		for(int i = 4; i < argc; i++)
 		{
 			if ((strcmp(argv[i], "-nv") == 0))
 				verbose = !verbose;
 			else if ((strcmp(argv[i], "-r") == 0))
 				retail = !retail;
+			else if ((strcmp(argv[i], "-ec") == 0))
+				ecdsa = !ecdsa;
 			else if (sscanf(argv[i], "-block-size=%s", tmpSize))
 				blkSize = strtoul(tmpSize, NULL, 0);	
+			else if (sscanf(argv[i], "-load-address=%s", tmpLoadAddress))
+				loadAddr = strtoul(tmpLoadAddress, NULL, 0);
+			else if (sscanf(argv[i], "-entrypoint=%s", tmpEntrypoint))
+			{
+				entry = strtoul(tmpEntrypoint, NULL, 0);
+				if (entry >= 0xB0000000) {
+					printf("illegal entry\n");
+					return -2;
+				}
+			}
 		}
 		
-		entry = strtoul(argv[4], NULL, 0);
-		if (entry >= 0xB0000000) {
-			printf("illegal entry\n");
-			return -2;
-		}
-
+		printf("==================================\nOptions:\n\tVerbose: \t%s\n\tRetail: \t%s\n\tBlock Size: \t0x%08X\n\tLoad Address: \t0x%08X\n\tEntrypoint: \t0x%08X\n==================================\n\n", (verbose?"true":"false"), (retail?"true":"false"), blkSize, loadAddr, entry);
+				
+		//return 0;
+		
 		//Open the file to decrypt, get it's size
 		in = fopen(argv[2], "rb");
 		fseek(in, 0, SEEK_END);
@@ -189,8 +218,7 @@ int main(int argc, char *argv[])
 
 		bufBlock = (iplBlk *)(buf.data + 0x10);
 		
-		bufBlock->addr = entry;
-		
+		bufBlock->addr = loadAddr;
 		bufBlock->size = blkSize;
 		bufBlock->entry = 0;
 		bufBlock->hash = 0;
@@ -223,7 +251,7 @@ int main(int argc, char *argv[])
 		{
 			blocks++;
 			
-			bufBlock->addr = entry + cur;
+			bufBlock->addr = loadAddr + cur;
 			bufBlock->hash = hash;
 			// load a single decrypted IPL block
 			hash = iplMemcpy(bufBlock->data, ipl + cur, bufBlock->size);
@@ -241,11 +269,11 @@ int main(int argc, char *argv[])
 			fwrite(&encblk, sizeof(encblk), 1, out);
 		}
 
-		buf.hdr.ecdsa = 0;      // turned off at the moment, for testing		
-		bufBlock->addr = entry + cur;
-		bufBlock->size = size_dec - cur;
-		bufBlock->entry = entry; //was 0x40F0000
-		bufBlock->hash = hash;
+		buf.hdr.ecdsa 		= (ecdsa?1:0);      
+		bufBlock->addr 		= loadAddr + cur;
+		bufBlock->size 		= size_dec - cur;
+		bufBlock->entry 	= entry; 
+		bufBlock->hash 		= hash;
 		memcpy(bufBlock->data, ipl + cur, bufBlock->size);
 
 		buf.hdr.data_size = offsetof(iplBlk, data) + bufBlock->size;
@@ -381,7 +409,7 @@ int main(int argc, char *argv[])
 				memset(cmac_hash, 0, 0x10);
 		
 				unsigned int block_buf_size = 0x30 + header->data_offset + header->data_size + pad_size;
-				unsigned char *block_buf = (unsigned char*) malloc(block_buf_size);
+				unsigned char *block_buf = (unsigned char*) malloc (block_buf_size);
 				memset(block_buf, 0, block_buf_size);
 				fseek(in, header_offset + 0x60, SEEK_SET);
 				fread(block_buf, block_buf_size , 1, in);
