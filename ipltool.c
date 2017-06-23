@@ -14,13 +14,13 @@
 
 #define APP_VER "0.2"
 #define DATA_BUF 512
-#define DECRYPTED_BLOCK_SIZE ((decBlkSize-blkSize))
+#define DECRYPTED_BLOCK_SIZE ((decdataSize-dataSize))
 
 // Default values
 unsigned long int entry			= 0x040F0000;
 u32 loadAddr 					= 0x040F0000;
-u32 blkSize 					= 0xF50;
-u32 decBlkSize 					= 0xF60;
+u32 dataSize 					= 0xF50;
+u32 decblkSize 					= 0xF60;
 
 #ifdef __cplusplus
 extern "C"
@@ -132,9 +132,12 @@ bool decrypt_data(FILE *in, unsigned int offset, unsigned int size, unsigned cha
 
 void print_usage(char *argv[])
 {
-	printf("USAGE: %s -d <file_in> <file_out> \n", argv[0]);
-	printf("       %s -e <file_in> <file_out> [options]\n\n", argv[0]);
-	printf("Options:\n       -nv\t\t\t\tDisables verbose logging\n       -r\t\t\t\tUse 'retail flag'\n       -block-size=<size>\t\tSpecify block size\n       -load-address=<address>\t\tSpecify base load address\n       -entrypoint=<entrypoint>\t\tSpecify entrypoint\n       -ec\t\t\t\tToggle ECDSA on last block\n\n");
+	printf("USAGE: %s -d <file_in> <file_out> [dec options]\n", argv[0]);
+	printf("       %s -e <file_in> <file_out> [enc options]\n\n", argv[0]);
+	printf("Decryption Options:\n       -nv\t\t\t\tDisables verbose logging\n\n");
+	printf("Encryption Options:\n       -nv\t\t\t\tDisables verbose logging\n       -r\t\t\t\tUse 'retail flag'\n       -s=<size>\t\t\tSpecify block size\n       -l=<address>\t\t\tSpecify base load address\n       -p=<entrypoint>\t\t\tSpecify entrypoint\n       -ec\t\t\t\tToggle ECDSA on last block\n");
+
+	printf("\n       Default values:\n       \tEntrypoint: \t\t\t0x%08X\n       \tLoad Address: \t\t\t0x%08X\n       \tData Size: \t\t\t0x%08X\n", entry, loadAddr, dataSize);
 }
 
 int main(int argc, char *argv[])
@@ -151,16 +154,17 @@ int main(int argc, char *argv[])
 	FILE *out = NULL;
 	unsigned int in_size;
 	int blocks = 0;
+	bool verbose = true;
 	
 	if ((strcmp(argv[1], "-e") == 0))
 	{
 		int cur;
 		u32 hash = 0;
 		iplBlk *bufBlock;
-		bool verbose = true, retail = false, ecdsa = false;
-		char *tmpSize = (char*) malloc(DATA_BUF); 
-		char *tmpEntrypoint = (char*) malloc(DATA_BUF); 
-		char *tmpLoadAddress = (char*) malloc(DATA_BUF); 
+		bool retail = false, ecdsa = false;
+		char *tmpSize = (char*)malloc(DATA_BUF); 
+		char *tmpEntrypoint = (char*)malloc(DATA_BUF); 
+		char *tmpLoadAddress = (char*)malloc(DATA_BUF);
 		
 		// process extra args
 		for(int i = 4; i < argc; i++)
@@ -171,11 +175,11 @@ int main(int argc, char *argv[])
 				retail = !retail;
 			else if ((strcmp(argv[i], "-ec") == 0))
 				ecdsa = !ecdsa;
-			else if (sscanf(argv[i], "-block-size=%s", tmpSize))
-				blkSize = strtoul(tmpSize, NULL, 0);	
-			else if (sscanf(argv[i], "-load-address=%s", tmpLoadAddress))
+			else if (sscanf(argv[i], "-s=%s", tmpSize))
+				dataSize = strtoul(tmpSize, NULL, 0);	
+			else if (sscanf(argv[i], "-l=%s", tmpLoadAddress))
 				loadAddr = strtoul(tmpLoadAddress, NULL, 0);
-			else if (sscanf(argv[i], "-entrypoint=%s", tmpEntrypoint))
+			else if (sscanf(argv[i], "-p=%s", tmpEntrypoint))
 			{
 				entry = strtoul(tmpEntrypoint, NULL, 0);
 				if (entry >= 0xB0000000) {
@@ -185,7 +189,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		
-		printf("==================================\nOptions:\n\tVerbose: \t%s\n\tRetail: \t%s\n\tBlock Size: \t0x%08X\n\tLoad Address: \t0x%08X\n\tEntrypoint: \t0x%08X\n==================================\n\n", (verbose?"true":"false"), (retail?"true":"false"), blkSize, loadAddr, entry);
+		printf("==================================\nOptions:\n\tVerbose: \t%s\n\tRetail: \t%s\n\tData Size: \t0x%08X\n\tLoad Address: \t0x%08X\n\tEntrypoint: \t0x%08X\n==================================\n\n", (verbose?"true":"false"), (retail?"true":"false"), dataSize, loadAddr, entry);
 				
 		//return 0;
 		
@@ -219,7 +223,7 @@ int main(int argc, char *argv[])
 		bufBlock = (iplBlk *)(buf.data + 0x10);
 		
 		bufBlock->addr = loadAddr;
-		bufBlock->size = blkSize;
+		bufBlock->size = dataSize;
 		bufBlock->entry = 0;
 		bufBlock->hash = 0;
 		hash = iplMemcpy(bufBlock->data, ipl, bufBlock->size);
@@ -241,7 +245,7 @@ int main(int argc, char *argv[])
 		buf.hdr.data_offset = 0x10;
 		
 		bufBlock = (iplBlk *)(buf.data + 0x10);
-		bufBlock->size = blkSize;
+		bufBlock->size = dataSize;
 		bufBlock->entry = 0;
 
 		buf.hdr.data_size = offsetof(iplBlk, data) + bufBlock->size;
@@ -295,8 +299,15 @@ int main(int argc, char *argv[])
 
 		free(tmpSize);
 	}
-	else if ((strcmp(argv[1], "-d") == 0) && (argc == 4))
+	else if ((strcmp(argv[1], "-d") == 0))
 	{
+		// process extra args
+		for(int i = 4; i < argc; i++)
+		{
+			if ((strcmp(argv[i], "-nv") == 0))
+				verbose = !verbose;
+		}
+		
 		printf("Decryption mode\n");
 		in = fopen(argv[2], "rb");
 		//Check input file for permission.
@@ -352,112 +363,112 @@ int main(int argc, char *argv[])
 
 			KIRK_CMD1_HEADER* header = (KIRK_CMD1_HEADER*)header_buf;
 			pad_size = (0x10 - (header->data_size % 0x10)) % 0x10;
-			printf("\n");
-			printf("[*] Kirk Header:\n");
+			if(verbose) printf("\n");
+			if(verbose) printf("[*] Kirk Header:\n");
 		
 		
 			if (header->mode == CMAC_MODE)
 			{
-				printf("Kirk mode: CMAC\n");
+				if(verbose) printf("Kirk mode: CMAC\n");
 				CMAC_KEY_HEADER* cmac_header = (CMAC_KEY_HEADER*)header->key_header;
 			
 				//Decrypt keys.
 				decrypt_header(header_buf, 0x20);
 			
 				int i;
-				printf("CIPHER KEY:  ");
+				if(verbose) printf("CIPHER KEY:  ");
 				for (i = 0; i < 0x10; i++)
-					printf("%02X", cmac_header->aes_key[i]);
-				printf("\n");
+					if(verbose) printf("%02X", cmac_header->aes_key[i]);
+				if(verbose) printf("\n");
 		
-				printf("HASHER KEY:  ");
+				if(verbose) printf("HASHER KEY:  ");
 				for (i = 0; i < 0x10; i++)
-					printf("%02X", cmac_header->cmac_key[i]);
-				printf("\n");
+					if(verbose) printf("%02X", cmac_header->cmac_key[i]);
+				if(verbose) printf("\n");
 		
 				//Check CMAC hashes
-				printf("HEADER CMAC: ");
+				if(verbose) printf("HEADER CMAC: ");
 				for (i = 0; i < 0x10; i++)
-					printf("%02X", cmac_header->cmac_header_hash[i]);
-				printf("\n");
+					if(verbose) printf("%02X", cmac_header->cmac_header_hash[i]);
+				if(verbose) printf("\n");
 
 				unsigned char *cmac_hash = (unsigned char*) malloc(0x10);
 				memset(cmac_hash, 0, 0x10);
 
 				cmac_hash_forge((header_buf + 0x10), 0x10, (header_buf + 0x60), 0x30, cmac_hash);
-				printf("COMPUTED:    ");
+				if(verbose) printf("COMPUTED:    ");
 				for (i = 0; i < 0x10; i++)
-					printf("%02X", cmac_hash[i]);
-				printf("\n");
+					if(verbose) printf("%02X", cmac_hash[i]);
+				if(verbose) printf("\n");
 				
 				//Check header cmac.
 				if (memcmp(cmac_hash, cmac_header->cmac_header_hash, 0x10))
 				{
-					printf("STATUS: FAIL\n");
+					if(verbose) printf("STATUS: FAIL\n");
 					fclose(in);
 					fclose(out);
 					return 0;
 				}
 				else
-					printf("STATUS: OK\n");
+					if(verbose) printf("STATUS: OK\n");
 
-				printf("BLOCK CMAC:  ");
+				if(verbose) printf("BLOCK CMAC:  ");
 				for (i = 0; i < 0x10; i++)
-					printf("%02X", cmac_header->cmac_block_hash[i]);
-				printf("\n");
+					if(verbose) printf("%02X", cmac_header->cmac_block_hash[i]);
+				if(verbose) printf("\n");
 
 				memset(cmac_hash, 0, 0x10);
 		
 				unsigned int block_buf_size = 0x30 + header->data_offset + header->data_size + pad_size;
-				unsigned char *block_buf = (unsigned char*) malloc (block_buf_size);
+				unsigned char *block_buf = (unsigned char *) malloc(block_buf_size);
 				memset(block_buf, 0, block_buf_size);
 				fseek(in, header_offset + 0x60, SEEK_SET);
 				fread(block_buf, block_buf_size , 1, in);
 		
 				cmac_hash_forge((header_buf + 0x10), 0x10, block_buf, block_buf_size, cmac_hash);
-				printf("COMPUTED:    ");
+				if(verbose) printf("COMPUTED:    ");
 				for (i = 0x0; i < 0x10; i++)
-					printf("%02X", cmac_hash[i]);
-				printf("\n");
+					if(verbose) printf("%02X", cmac_hash[i]);
+				if(verbose) printf("\n");
 				
 				//Check block cmac.
 				if (memcmp(cmac_hash, cmac_header->cmac_block_hash, 0x10))
 				{
-					printf("STATUS: FAIL\n");
+					if(verbose) printf("STATUS: FAIL\n");
 					fclose(in);
 					fclose(out);
 					return 0;
 				}
 				else
-					printf("STATUS: OK\n");
+					if(verbose) printf("STATUS: OK\n");
 			
 				free(block_buf);
 				blocks++;
 			}
 			else if (header->mode == ECDSA_MODE)
 			{
-				printf("Kirk mode: ECDSA\n");
+				if(verbose) printf("Kirk mode: ECDSA\n");
 				ECDSA_KEY_HEADER* ecdsa_header = (ECDSA_KEY_HEADER*)header->key_header;
 			
 				//Decrypt keys.
 				decrypt_header(header_buf, 0x10);
 			
 				int i;
-				printf("CIPHER KEY:  ");
+				if(verbose) printf("CIPHER KEY:  ");
 				for (i = 0; i < 0x10; i++)
-					printf("%02X", ecdsa_header->aes_key[i]);
-				printf("\n");
+					if(verbose) printf("%02X", ecdsa_header->aes_key[i]);
+				if(verbose) printf("\n");
 				
-							//Header Signature
-				printf("HEADER SIGNATURE:\n");
-				printf("R:   ");
+				//Header Signature
+				if(verbose) printf("HEADER SIGNATURE:\n");
+				if(verbose) printf("R:   ");
 				for (i = 0; i < 0x14; i++)
-					printf("%02X", ecdsa_header->header_sig_r[i]);
-				printf("\n");
-				printf("S:   ");
+					if(verbose) printf("%02X", ecdsa_header->header_sig_r[i]);
+				if(verbose) printf("\n");
+				if(verbose) printf("S:   ");
 				for (i = 0; i < 0x14; i++)
-					printf("%02X", ecdsa_header->header_sig_s[i]);
-				printf("\n");
+					if(verbose) printf("%02X", ecdsa_header->header_sig_s[i]);
+				if(verbose) printf("\n");
 			
 				unsigned char header_hash[0x14];
 				memset(header_hash, 0, 0x14);
@@ -482,24 +493,24 @@ int main(int argc, char *argv[])
 				//Check header signature
 				if (!ecdsa_verify(header_hash, signature_r, signature_s))
 				{
-					printf("STATUS: FAIL\n");
+					if(verbose) printf("STATUS: FAIL\n");
 					fclose(in);
 					fclose(out);
 					return 0;
 				}
 				else
-					printf("STATUS: OK\n");
+					if(verbose) printf("STATUS: OK\n");
 				
 				//Block Signature
-				printf("BLOCK SIGNATURE:\n");
-				printf("R:   ");
+				if(verbose) printf("BLOCK SIGNATURE:\n");
+				if(verbose) printf("R:   ");
 				for (i = 0; i < 0x14; i++)
-					printf("%02X", ecdsa_header->block_sig_r[i]);
-				printf("\n");
-				printf("S:   ");
+					if(verbose) printf("%02X", ecdsa_header->block_sig_r[i]);
+				if(verbose) printf("\n");
+				if(verbose) printf("S:   ");
 				for (i = 0; i < 0x14; i++)
-					printf("%02X", ecdsa_header->block_sig_s[i]);
-				printf("\n");
+					if(verbose) printf("%02X", ecdsa_header->block_sig_s[i]);
+				if(verbose) printf("\n");
 
 				unsigned char block_hash[0x14];
 				memset(block_hash, 0, 0x14);
@@ -520,17 +531,17 @@ int main(int argc, char *argv[])
 				//Check block signature
 				if (!ecdsa_verify(block_hash, signature_r, signature_s))
 				{
-					printf("STATUS: FAIL\n");
+					if(verbose) printf("STATUS: FAIL\n");
 					fclose(in);
 					fclose(out);
 					return 0;
 				}
 				else
-					printf("STATUS: OK\n");
+					if(verbose) printf("STATUS: OK\n");
 			}
 			else
 			{
-					printf("Error! Unknown Kirk mode.\n");
+					if(verbose) printf("Error! Unknown Kirk mode.\n");
 					fclose(in);
 					fclose(out);
 					return 0;
@@ -538,18 +549,18 @@ int main(int argc, char *argv[])
 		
 		
 			//Decrypt data
-			printf("Encrypted data size:   0x%X\n", header->data_size);
-			printf("Encrypted data offset: 0x%X\n", header->data_offset);
+			if(verbose) printf("Encrypted data size:   0x%X\n", header->data_size);
+			if(verbose) printf("Encrypted data offset: 0x%X\n", header->data_offset);
 			real_data_offset = (header_offset + 0x90 + header->data_offset);
 			if (!decrypt_data(in, real_data_offset, header->data_size, header->key_header, data_checksum, out))
 			{
-				printf("Error! decrypt_data() failed.\n");
+				if(verbose) printf("Error! decrypt_data() failed.\n");
 				fclose(in);
 				fclose(out);
 				return 0;
 			}
 			else
-				printf("Block decrypted.\n");
+				if(verbose) printf("Block decrypted.\n");
 			
 			header_offset = header_offset + 0x1000;
 			if ((header_offset >= in_size) || header_offset < header->data_size )
