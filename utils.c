@@ -165,7 +165,7 @@ int walk_dir(char *dname, void *func_ptr, int verbose)
 	/* process file */
 	memset(&statbuf, 0, sizeof(statbuf));
 	stat(dname, &statbuf);
-	if((statbuf.st_mode&S_IFMT) != S_IFDIR){
+	if(!S_ISDIR(statbuf.st_mode)){
 		if(func_ptr!=NULL)
 			return f_process_file(dname);
 		else
